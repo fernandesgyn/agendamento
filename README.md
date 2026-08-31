@@ -18,9 +18,24 @@ Sistema de agendamento de data e hora em **PHP 8.1+ e MySQL 8+**, pensado priori
 - Exportação CSV dos agendamentos.
 - Interface responsiva/mobile-first inspirada na identidade visual do Aluguel Social/AGEHAB.
 
-## Instalação nova
+## Banco de dados: sem migrations
 
-1. Crie o banco MySQL e execute `database/schema.sql`.
+Este projeto **não usa migrations**.
+
+O arquivo `database/schema.sql` é a fonte única e completa da estrutura do banco de dados. Ele já contém todas as tabelas, índices, relacionamentos, datas e horários iniciais necessários para executar o sistema.
+
+As tabelas atuais são:
+
+- `authorized_subjects`: pessoas autorizadas a realizar o agendamento;
+- `scheduling_days`: datas disponíveis;
+- `scheduling_slots`: horários, capacidade e disponibilidade por data;
+- `appointments`: agendamentos realizados.
+
+Os seeds são exclusivamente para inserir massa de teste. Eles **não criam, alteram ou verificam tabelas**.
+
+## Instalação
+
+1. Execute `database/schema.sql` no MySQL.
 2. Copie `.env.example` para `.env` e informe as credenciais do banco e do administrador.
 3. Garanta PHP 8.1+ com a extensão `pdo_mysql` habilitada.
 4. Em produção, configure o servidor web para usar a pasta `public/` como DocumentRoot.
@@ -32,15 +47,15 @@ Para rodar rapidamente com o servidor embutido do PHP, a partir da raiz do proje
 php -S localhost:8080 -t public
 ```
 
-## Atualização de banco já existente
+### Banco criado com uma versão anterior
 
-Se o banco já havia sido criado antes da inclusão da lista de pessoas autorizadas, execute:
+Como o projeto não utiliza migrations, em **desenvolvimento/homologação** a forma correta de atualizar um banco antigo é recriá-lo e executar novamente o arquivo completo:
 
 ```text
-database/migrations/20260831_add_authorized_subjects.sql
+database/schema.sql
 ```
 
-Para ambiente de teste, executar novamente `seed.bat` também cria automaticamente essa tabela caso ela ainda não exista.
+Não execute seeds antes de criar a estrutura completa pelo `schema.sql`.
 
 ## Pessoas autorizadas
 
@@ -152,9 +167,8 @@ As datas, horários e capacidades podem ser alterados no painel administrativo.
 app/                 bootstrap, banco, helpers e autenticação
 public/              aplicação web
 public/admin/        painel administrativo
-database/schema.sql  estrutura completa para instalação nova
-database/migrations/ ajustes para bancos já existentes
-database/seeds/      massa de teste
+database/schema.sql  estrutura completa e única do banco
+database/seeds/      massa de teste (somente INSERTs)
 seed.bat             atalho para executar o seed no Windows
 .env.example         parâmetros de ambiente
 ```
