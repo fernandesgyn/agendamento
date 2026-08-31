@@ -105,6 +105,16 @@ function subjectFromRequest(): array
     return ['', '', 'O link de agendamento não contém um identificador válido.'];
 }
 
+function authorizedSubject(PDO $pdo, string $type, string $value): ?array
+{
+    $stmt = $pdo->prepare("SELECT id, subject_type, subject_value, display_name
+                           FROM authorized_subjects
+                           WHERE subject_type=? AND subject_value=? AND active=1
+                           LIMIT 1");
+    $stmt->execute([$type, $value]);
+    return $stmt->fetch() ?: null;
+}
+
 function adminLoggedIn(): bool
 {
     return !empty($_SESSION['admin_logged_in']);
