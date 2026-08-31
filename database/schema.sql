@@ -27,9 +27,13 @@ CREATE TABLE appointments (
     subject_type ENUM('id','cpf') NOT NULL,
     subject_value VARCHAR(100) NOT NULL,
     status ENUM('active','cancelled') NOT NULL DEFAULT 'active',
+    active_subject_key VARCHAR(120) GENERATED ALWAYS AS (
+        CASE WHEN status='active' THEN CONCAT(subject_type, ':', subject_value) ELSE NULL END
+    ) STORED,
     booked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     cancelled_at TIMESTAMP NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_active_subject (active_subject_key),
     INDEX idx_slot_status (slot_id, status),
     INDEX idx_subject (subject_type, subject_value, status),
     CONSTRAINT fk_appointments_slot FOREIGN KEY (slot_id) REFERENCES scheduling_slots(id)
