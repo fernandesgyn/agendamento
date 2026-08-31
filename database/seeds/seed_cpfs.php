@@ -5,9 +5,10 @@ declare(strict_types=1);
 /**
  * Seed de CPFs sintéticos para desenvolvimento/homologação.
  *
- * Os números são gerados localmente a partir de bases sequenciais e recebem
- * os dígitos verificadores calculados pelo algoritmo do CPF. Nenhum CPF é
- * armazenado no repositório e nenhum dado é obtido de pessoas reais.
+ * Cria uma lista de pessoas autorizadas a agendar. A maioria fica SEM horário,
+ * para permitir testar o fluxo real de agendamento. Uma pequena parte recebe
+ * horários previamente reservados apenas para simular ocupação, poucas vagas
+ * restantes e horários lotados.
  *
  * NÃO execute este arquivo em produção.
  */
@@ -44,7 +45,23 @@ function syntheticCpf(int $base): string
 
 $pdo = db();
 
-// Cenários para validar visualmente capacidade e desaparecimento de horários.
+// 60 pessoas de teste cadastradas. Somente 24 são usadas para simular ocupação.
+$totalPeople = 60;
+$base = 100000001;
+$cpfs = [];
+
+for ($i = 1; $i <= $totalPeople; $i++) {
+    do {
+        $cpf = syntheticCpf($base++);
+    } while (!validCpf($cpf));
+
+    $cpfs[] = [
+        'cpf' => $cpf,
+        'name' => sprintf('Pessoa Teste %02d', $i),
+    ];
+}
+
+// Cenários visuais de ocupação.
 $scenarios = [
     ['2026-08-14', '07:00:00', 6], // lotado
     ['2026-08-14', '08:00:00', 5], // 1 vaga restante
@@ -52,6 +69,12 @@ $scenarios = [
     ['2026-08-15', '07:00:00', 6], // lotado
     ['2026-08-16', '19:00:00', 4], // 2 vagas restantes
 ];
+
+$insertAuthorized = $pdo->prepare(
+    "INSERT INTO authorized_subjects (subject_type, subject_value, display_name, active)
+     VALUES ('cpf', ?, ?, 1)
+     ON DUPLICATE KEY UPDATE display_name=VALUES(display_name), active=1"
+);
 
 $findSlot = $pdo->prepare(
     "SELECT s.id
@@ -61,16 +84,18 @@ $findSlot = $pdo->prepare(
       LIMIT 1"
 );
 
-$insert = $pdo->prepare(
+$insertAppointment = $pdo->prepare(
     "INSERT IGNORE INTO appointments (slot_id, subject_type, subject_value)
      VALUES (?, 'cpf', ?)"
 );
 
-$base = 100000001;
-$generated = [];
-
 $pdo->beginTransaction();
 try {
+    foreach ($cpfs as $person) {
+        $insertAuthorized->execute([$person['cpf'], $person['name']]);
+    }
+
+    $cpfIndex = 0;
     foreach ($scenarios as [$date, $time, $quantity]) {
         $findSlot->execute([$date, $time]);
         $slotId = $findSlot->fetchColumn();
@@ -79,16 +104,11 @@ try {
         }
 
         for ($i = 0; $i < $quantity; $i++) {
-            do {
-                $cpf = syntheticCpf($base++);
-            } while (!validCpf($cpf));
-
-            $insert->execute([(int)$slotId, $cpf]);
-            $generated[] = [
-                'cpf' => $cpf,
-                'date' => $date,
-                'time' => substr($time, 0, 5),
-            ];
+            if (!isset($cpfs[$cpfIndex])) {
+                throw new RuntimeException('Não há CPFs suficientes para montar os cenários de ocupação.');
+            }
+            $insertAppointment->execute([(int)$slotId, $cpfs[$cpfIndex]['cpf']]);
+            $cpfIndex++;
         }
     }
 
@@ -99,9 +119,53 @@ try {
     exit(1);
 }
 
-fwrite(STDOUT, "Seed concluído. CPFs sintéticos gerados:\n\n");
-foreach ($generated as $row) {
-    fwrite(STDOUT, sprintf("%s  ->  %s às %s\n", $row['cpf'], $row['date'], $row['time']));
+// Classifica pelo estado REAL do banco, inclusive se o seed já tiver sido executado antes.
+$check = $pdo->prepare(
+    "SELECT d.service_date, s.service_time
+       FROM appointments a
+       JOIN scheduling_slots s ON s.id=a.slot_id
+       JOIN scheduling_days d ON d.id=s.scheduling_day_id
+      WHERE a.subject_type='cpf' AND a.subject_value=? AND a.status='active'
+      LIMIT 1"
+);
+
+$free = [];
+$reserved = [];
+foreach ($cpfs as $person) {
+    $check->execute([$person['cpf']]);
+    $appointment = $check->fetch();
+    if ($appointment) {
+        $reserved[] = $person + [
+            'date' => $appointment['service_date'],
+            'time' => substr($appointment['service_time'], 0, 5),
+        ];
+    } else {
+        $free[] = $person;
+    }
 }
 
-fwrite(STDOUT, "\nUse somente em ambiente de desenvolvimento/homologação.\n");
+fwrite(STDOUT, "\n============================================================\n");
+fwrite(STDOUT, "CPFs CADASTRADOS E LIVRES PARA FAZER NOVO AGENDAMENTO\n");
+fwrite(STDOUT, "============================================================\n\n");
+foreach ($free as $person) {
+    fwrite(STDOUT, sprintf("%s  |  %s\n", $person['cpf'], $person['name']));
+}
+
+fwrite(STDOUT, "\n============================================================\n");
+fwrite(STDOUT, "CPFs JA AGENDADOS - SOMENTE PARA SIMULAR OCUPACAO\n");
+fwrite(STDOUT, "============================================================\n\n");
+foreach ($reserved as $person) {
+    fwrite(STDOUT, sprintf(
+        "%s  |  %s  ->  %s as %s\n",
+        $person['cpf'],
+        $person['name'],
+        $person['date'],
+        $person['time']
+    ));
+}
+
+fwrite(STDOUT, sprintf(
+    "\nResumo: %d CPFs cadastrados, %d livres para agendar e %d ja reservados.\n",
+    count($cpfs), count($free), count($reserved)
+));
+fwrite(STDOUT, "Use somente em ambiente de desenvolvimento/homologacao.\n");
