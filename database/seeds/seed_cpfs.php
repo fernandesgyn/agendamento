@@ -45,6 +45,20 @@ function syntheticCpf(int $base): string
 
 $pdo = db();
 
+// Permite executar este seed também em bancos criados antes da inclusão
+// da tabela de pessoas autorizadas, sem precisar recriar o banco.
+$pdo->exec("CREATE TABLE IF NOT EXISTS authorized_subjects (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    subject_type ENUM('id','cpf') NOT NULL,
+    subject_value VARCHAR(100) NOT NULL,
+    display_name VARCHAR(150) NULL,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_authorized_subject (subject_type, subject_value),
+    INDEX idx_authorized_active (active)
+) ENGINE=InnoDB");
+
 // 60 pessoas de teste cadastradas. Somente 24 são usadas para simular ocupação.
 $totalPeople = 60;
 $base = 100000001;
