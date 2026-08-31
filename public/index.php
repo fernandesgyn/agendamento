@@ -82,11 +82,38 @@ if (!$subjectError) {
                         JOIN scheduling_slots s ON s.scheduling_day_id=d.id
                         WHERE d.active=1 AND s.active=1
                         ORDER BY d.service_date, s.service_time")->fetchAll();
+
     foreach ($rows as $row) {
-        if ((int)$row['used'] >= (int)$row['capacity']) continue;
-        $days[$row['service_date']][] = $row;
+        $left = max(0, (int)$row['capacity'] - (int)$row['used']);
+        if ($left === 0) continue;
+
+        $date = $row['service_date'];
+        $timeKey = substr($row['service_time'], 0, 5);
+
+        if (!isset($days[$date])) {
+            $days[$date] = [
+                'available' => 0,
+                'slots' => [],
+            ];
+        }
+
+        // Chave por horário: garante que cada hora seja exibida uma única vez em cada data.
+        $row['left'] = $left;
+        $days[$date]['slots'][$timeKey] = $row;
     }
+
+    foreach ($days as $date => &$day) {
+        ksort($day['slots']);
+        $day['available'] = array_sum(array_map(
+            static fn(array $slot): int => (int)$slot['left'],
+            $day['slots']
+        ));
+        if ($day['available'] <= 0) unset($days[$date]);
+    }
+    unset($day);
 }
+
+$firstDate = $days ? array_key_first($days) : null;
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -105,8 +132,8 @@ if (!$subjectError) {
 <main class="container">
   <section class="hero">
     <span class="eyebrow">ATENDIMENTO PRESENCIAL</span>
-    <h1>Escolha a melhor data e horário</h1>
-    <p>Selecione uma data e depois um dos horários disponíveis. Horários lotados não são exibidos.</p>
+    <h1>Escolha sua data e horário</h1>
+    <p>Primeiro escolha o dia. Depois toque no horário desejado para confirmar.</p>
   </section>
 
   <?php if ($message): ?><div class="alert success"><?= e($message) ?></div><?php endif; ?>
@@ -120,27 +147,53 @@ if (!$subjectError) {
     <?php if (!$days): ?>
       <div class="empty"><h2>Não há horários disponíveis</h2><p>As vagas disponíveis para agendamento foram preenchidas ou desativadas.</p></div>
     <?php else: ?>
-      <div class="steps"><span class="active">1</span><b>Data</b><i></i><span>2</span><b>Horário</b></div>
+      <div class="section-title">
+        <span class="step-number">1</span>
+        <div><small>PRIMEIRO</small><h2>Escolha o dia</h2></div>
+      </div>
+
       <div class="date-grid" id="dateGrid">
-        <?php $first=true; foreach ($days as $date=>$slots): ?>
-          <button class="date-card<?= $first?' selected':'' ?>" type="button" data-date="<?= e($date) ?>">
-            <small><?= e(weekdayBr($date)) ?></small><strong><?= e((new DateTimeImmutable($date))->format('d')) ?></strong><span><?= e((new DateTimeImmutable($date))->format('m/Y')) ?></span>
+        <?php $first=true; foreach ($days as $date=>$day): $dt = new DateTimeImmutable($date); ?>
+          <button class="date-card<?= $first?' selected':'' ?>" type="button"
+                  data-date="<?= e($date) ?>"
+                  data-date-label="<?= e(formatDateBr($date)) ?>"
+                  aria-pressed="<?= $first?'true':'false' ?>">
+            <span class="date-main">
+              <small><?= e(weekdayBr($date)) ?></small>
+              <strong><?= e($dt->format('d/m')) ?></strong>
+              <span><?= e($dt->format('Y')) ?></span>
+            </span>
+            <span class="date-vacancies">
+              <strong><?= (int)$day['available'] ?></strong>
+              <small><?= (int)$day['available'] === 1 ? 'vaga disponível' : 'vagas disponíveis' ?></small>
+            </span>
           </button>
         <?php $first=false; endforeach; ?>
       </div>
 
       <section class="slot-section">
-        <h2>Horários disponíveis</h2>
-        <p class="muted">Toque no horário desejado. A confirmação será solicitada antes da gravação.</p>
-        <?php $first=true; foreach ($days as $date=>$slots): ?>
-          <div class="slot-grid" data-slots-for="<?= e($date) ?>"<?= $first?'':' hidden' ?>>
-            <?php foreach ($slots as $slot): $left=(int)$slot['capacity']-(int)$slot['used']; ?>
-              <button class="slot" type="button" data-slot-id="<?= (int)$slot['slot_id'] ?>" data-date-label="<?= e(formatDateBr($date)) ?>" data-time="<?= e(substr($slot['service_time'],0,5)) ?>">
-                <strong><?= e(substr($slot['service_time'],0,5)) ?></strong><small><?= $left ?> <?= $left===1?'vaga':'vagas' ?></small>
+        <div class="section-title">
+          <span class="step-number">2</span>
+          <div><small>DEPOIS</small><h2>Escolha o horário</h2></div>
+        </div>
+        <div class="selected-day-label" id="selectedDayLabel"><?= $firstDate ? e(formatDateBr($firstDate)) : '' ?></div>
+        <p class="muted slot-help">Os números em destaque mostram quantas vagas ainda restam em cada horário.</p>
+
+        <div class="slot-grid" id="slotGrid">
+          <?php foreach ($days as $date=>$day): ?>
+            <?php foreach ($day['slots'] as $slot): $left=(int)$slot['left']; ?>
+              <button class="slot" type="button"
+                      data-slot-date="<?= e($date) ?>"
+                      data-slot-id="<?= (int)$slot['slot_id'] ?>"
+                      data-date-label="<?= e(formatDateBr($date)) ?>"
+                      data-time="<?= e(substr($slot['service_time'],0,5)) ?>"
+                      <?= $date === $firstDate ? '' : 'hidden' ?>>
+                <strong class="slot-time"><?= e(substr($slot['service_time'],0,5)) ?></strong>
+                <span class="slot-vacancies"><b><?= $left ?></b> <?= $left===1?'vaga restante':'vagas restantes' ?></span>
               </button>
             <?php endforeach; ?>
-          </div>
-        <?php $first=false; endforeach; ?>
+          <?php endforeach; ?>
+        </div>
       </section>
     <?php endif; ?>
   <?php endif; ?>
@@ -156,7 +209,7 @@ if (!$subjectError) {
       <input type="hidden" name="subject_type" value="<?= e($subjectType) ?>">
       <input type="hidden" name="subject_value" value="<?= e($subjectValue) ?>">
       <input type="hidden" name="slot_id" id="modalSlotId">
-      <button class="primary" type="submit">Sim, confirmar</button>
+      <button class="primary" type="submit">SIM, CONFIRMAR</button>
       <button class="secondary" type="button" data-close>Voltar</button>
     </form>
   </div>
