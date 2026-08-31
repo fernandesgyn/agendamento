@@ -4,9 +4,22 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/app/bootstrap.php';
 
 [$subjectType, $subjectValue, $subjectError] = subjectFromRequest();
+$pdo = db();
+$authorized = null;
+
+if (!$subjectError) {
+    try {
+        $authorized = authorizedSubject($pdo, $subjectType, $subjectValue);
+        if (!$authorized) {
+            $subjectError = 'Este CPF/identificador não está cadastrado para realizar o agendamento.';
+        }
+    } catch (PDOException $e) {
+        $subjectError = 'A lista de pessoas autorizadas ainda não foi instalada no banco de dados. Execute a migration indicada no README.';
+    }
+}
+
 $message = '';
 $error = $subjectError;
-$pdo = db();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error) {
     verifyCsrf();
@@ -19,6 +32,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error) {
     } else {
         try {
             $pdo->beginTransaction();
+
+            // Revalida a autorização dentro da transação.
+            $stmt = $pdo->prepare("SELECT id FROM authorized_subjects
+                                   WHERE subject_type=? AND subject_value=? AND active=1
+                                   LIMIT 1 FOR UPDATE");
+            $stmt->execute([$subjectType, $subjectValue]);
+            if (!$stmt->fetchColumn()) {
+                throw new RuntimeException('Este CPF/identificador não está mais autorizado a realizar o agendamento.');
+            }
 
             // O agendamento público é definitivo. Depois da primeira confirmação,
             // o cidadão não pode trocar nem excluir data/horário pelo link recebido.
@@ -151,6 +173,10 @@ $firstDate = $days ? array_key_first($days) : null;
   <?php if ($error): ?><div class="alert error"><?= e($error) ?></div><?php endif; ?>
 
   <?php if (!$subjectError): ?>
+    <?php if (!empty($authorized['display_name'])): ?>
+      <div class="authorized-person"><small>AGENDAMENTO PARA</small><strong><?= e($authorized['display_name']) ?></strong></div>
+    <?php endif; ?>
+
     <?php if ($current): ?>
       <div class="current">
         <strong>SEU AGENDAMENTO</strong>
