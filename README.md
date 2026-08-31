@@ -19,9 +19,17 @@ Sistema de agendamento de data e hora em **PHP 8.1+ e MySQL 8+**, pensado priori
 
 1. Crie um banco MySQL e execute `database/schema.sql`.
 2. Copie `.env.example` para `.env` e informe as credenciais do banco e do administrador.
-3. Configure o servidor web para usar a pasta `public/` como DocumentRoot.
-4. Garanta PHP 8.1+ com a extensão `pdo_mysql` habilitada.
+3. Garanta PHP 8.1+ com a extensão `pdo_mysql` habilitada.
+4. Em produção, configure o servidor web para usar a pasta `public/` como DocumentRoot.
 5. Acesse `/admin/` para administrar datas, horários e vagas.
+
+Para rodar rapidamente com o servidor embutido do PHP, a partir da raiz do projeto:
+
+```bash
+php -S localhost:8080 -t public
+```
+
+Depois acesse `http://localhost:8080/admin/` para o painel ou, por exemplo, `http://localhost:8080/?id=TESTE001` para simular um link individual.
 
 Exemplo Apache (VirtualHost):
 
@@ -66,6 +74,7 @@ Essas datas podem ser alteradas, desativadas ou substituídas no painel administ
 - PDO com prepared statements.
 - CSRF em gravações públicas e administrativas.
 - Sessão de administrador com cookie `HttpOnly` e `SameSite=Lax`.
+- Restrição no banco para impedir mais de um agendamento ativo por identificador.
 - Recomenda-se HTTPS obrigatório em produção.
 - Não versionar o arquivo `.env`.
 - Trocar a senha administrativa antes de publicar.
