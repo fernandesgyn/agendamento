@@ -57,6 +57,60 @@ https://seu-dominio.gov.br/?cpf=00000000000
 
 > Para reduzir exposição de dados pessoais em histórico do navegador, logs e ferramentas de mensageria, o parâmetro `id` é preferível ao CPF.
 
+## Seed de CPFs para teste
+
+O sistema não exige cadastro prévio de CPF: qualquer CPF válido passado no parâmetro `cpf` pode abrir a tela de agendamento. O seed em `database/seeds/seed_cpfs.php` existe apenas para preencher alguns horários com agendamentos sintéticos e permitir testar lotação, vagas restantes e desaparecimento de horários lotados.
+
+Antes de executar o seed, o banco precisa ter sido criado com `database/schema.sql` e o arquivo `.env` deve estar configurado corretamente.
+
+No Windows, a partir da raiz do projeto:
+
+```bat
+copy .env.example .env
+```
+
+Edite o `.env` e confira pelo menos:
+
+```text
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=agendamento
+DB_USERNAME=root
+DB_PASSWORD=
+```
+
+Depois execute simplesmente:
+
+```bat
+seed.bat
+```
+
+Ou diretamente pelo PHP:
+
+```bat
+php database\seeds\seed_cpfs.php
+```
+
+Se estiver usando XAMPP e o comando `php` não for reconhecido:
+
+```bat
+C:\xampp\php\php.exe database\seeds\seed_cpfs.php
+```
+
+Para verificar se o PHP está disponível:
+
+```bat
+php -v
+```
+
+Para verificar se a extensão MySQL do PHP está habilitada:
+
+```bat
+php -m | findstr pdo_mysql
+```
+
+Ao terminar, o script mostra no terminal os CPFs sintéticos gerados e os horários nos quais foram inseridos.
+
 ## Datas e horários iniciais
 
 O `schema.sql` já cria, como configuração inicial solicitada:
@@ -86,5 +140,7 @@ app/                 bootstrap, banco, helpers e autenticação
 public/              aplicação web
 public/admin/        painel administrativo
 database/schema.sql  estrutura e carga inicial
+database/seeds/      massa de teste
+seed.bat              atalho para executar o seed no Windows
 .env.example         parâmetros de ambiente
 ```
