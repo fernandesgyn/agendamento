@@ -3,12 +3,11 @@
 declare(strict_types=1);
 
 /**
- * Seed de CPFs sintéticos para desenvolvimento/homologação.
+ * Massa sintética para desenvolvimento/homologação.
  *
- * Cria uma lista de pessoas autorizadas a agendar. A maioria fica SEM horário,
- * para permitir testar o fluxo real de agendamento. Uma pequena parte recebe
- * horários previamente reservados apenas para simular ocupação, poucas vagas
- * restantes e horários lotados.
+ * Cria pessoas com CPF, nome e data de nascimento. A maioria fica SEM horário,
+ * para permitir testar o login e o fluxo real de agendamento. Uma pequena parte
+ * recebe horários previamente reservados para simular ocupação e horários lotados.
  *
  * Requer o banco previamente criado por database/schema.sql.
  * Este seed insere apenas dados de teste; não cria nem altera tabelas.
@@ -29,17 +28,13 @@ function syntheticCpf(int $base): string
     $digits = array_map('intval', str_split($nine));
 
     $sum = 0;
-    for ($i = 0; $i < 9; $i++) {
-        $sum += $digits[$i] * (10 - $i);
-    }
+    for ($i = 0; $i < 9; $i++) $sum += $digits[$i] * (10 - $i);
     $d1 = (10 * $sum) % 11;
     if ($d1 === 10) $d1 = 0;
     $digits[] = $d1;
 
     $sum = 0;
-    for ($i = 0; $i < 10; $i++) {
-        $sum += $digits[$i] * (11 - $i);
-    }
+    for ($i = 0; $i < 10; $i++) $sum += $digits[$i] * (11 - $i);
     $d2 = (10 * $sum) % 11;
     if ($d2 === 10) $d2 = 0;
 
@@ -47,24 +42,26 @@ function syntheticCpf(int $base): string
 }
 
 $pdo = db();
-
-// 60 pessoas de teste cadastradas. Somente 24 são usadas para simular ocupação.
 $totalPeople = 60;
 $base = 100000001;
-$cpfs = [];
+$people = [];
 
 for ($i = 1; $i <= $totalPeople; $i++) {
     do {
         $cpf = syntheticCpf($base++);
     } while (!validCpf($cpf));
 
-    $cpfs[] = [
+    $year = 1960 + ($i % 45);
+    $month = (($i * 3) % 12) + 1;
+    $day = (($i * 7) % 28) + 1;
+
+    $people[] = [
         'cpf' => $cpf,
         'name' => sprintf('Pessoa Teste %02d', $i),
+        'birth_date' => sprintf('%04d-%02d-%02d', $year, $month, $day),
     ];
 }
 
-// Cenários visuais de ocupação.
 $scenarios = [
     ['2026-08-14', '07:00:00', 6], // lotado
     ['2026-08-14', '08:00:00', 5], // 1 vaga restante
@@ -73,45 +70,37 @@ $scenarios = [
     ['2026-08-16', '19:00:00', 4], // 2 vagas restantes
 ];
 
-$insertAuthorized = $pdo->prepare(
-    "INSERT INTO authorized_subjects (subject_type, subject_value, display_name, active)
-     VALUES ('cpf', ?, ?, 1)
-     ON DUPLICATE KEY UPDATE display_name=VALUES(display_name), active=1"
+$insertPerson = $pdo->prepare(
+    'INSERT INTO people (cpf, name, birth_date, active) VALUES (?, ?, ?, 1)
+     ON DUPLICATE KEY UPDATE name=VALUES(name), birth_date=VALUES(birth_date), active=1'
 );
-
+$findPerson = $pdo->prepare('SELECT id FROM people WHERE cpf=? LIMIT 1');
 $findSlot = $pdo->prepare(
-    "SELECT s.id
-       FROM scheduling_slots s
-       JOIN scheduling_days d ON d.id = s.scheduling_day_id
-      WHERE d.service_date = ? AND s.service_time = ?
-      LIMIT 1"
+    'SELECT s.id FROM scheduling_slots s
+     JOIN scheduling_days d ON d.id=s.scheduling_day_id
+     WHERE d.service_date=? AND s.service_time=? LIMIT 1'
 );
-
-$insertAppointment = $pdo->prepare(
-    "INSERT IGNORE INTO appointments (slot_id, subject_type, subject_value)
-     VALUES (?, 'cpf', ?)"
-);
+$insertAppointment = $pdo->prepare('INSERT IGNORE INTO appointments (slot_id, person_id) VALUES (?, ?)');
 
 $pdo->beginTransaction();
 try {
-    foreach ($cpfs as $person) {
-        $insertAuthorized->execute([$person['cpf'], $person['name']]);
+    foreach ($people as &$person) {
+        $insertPerson->execute([$person['cpf'], $person['name'], $person['birth_date']]);
+        $findPerson->execute([$person['cpf']]);
+        $person['id'] = (int)$findPerson->fetchColumn();
     }
+    unset($person);
 
-    $cpfIndex = 0;
+    $personIndex = 0;
     foreach ($scenarios as [$date, $time, $quantity]) {
         $findSlot->execute([$date, $time]);
-        $slotId = $findSlot->fetchColumn();
-        if (!$slotId) {
-            throw new RuntimeException("Horário não encontrado: {$date} {$time}");
-        }
+        $slotId = (int)$findSlot->fetchColumn();
+        if ($slotId <= 0) throw new RuntimeException("Horário não encontrado: {$date} {$time}");
 
         for ($i = 0; $i < $quantity; $i++) {
-            if (!isset($cpfs[$cpfIndex])) {
-                throw new RuntimeException('Não há CPFs suficientes para montar os cenários de ocupação.');
-            }
-            $insertAppointment->execute([(int)$slotId, $cpfs[$cpfIndex]['cpf']]);
-            $cpfIndex++;
+            if (!isset($people[$personIndex])) throw new RuntimeException('Não há pessoas suficientes para os cenários de ocupação.');
+            $insertAppointment->execute([$slotId, (int)$people[$personIndex]['id']]);
+            $personIndex++;
         }
     }
 
@@ -122,20 +111,17 @@ try {
     exit(1);
 }
 
-// Classifica pelo estado REAL do banco, inclusive se o seed já tiver sido executado antes.
 $check = $pdo->prepare(
-    "SELECT d.service_date, s.service_time
-       FROM appointments a
-       JOIN scheduling_slots s ON s.id=a.slot_id
-       JOIN scheduling_days d ON d.id=s.scheduling_day_id
-      WHERE a.subject_type='cpf' AND a.subject_value=? AND a.status='active'
-      LIMIT 1"
+    "SELECT d.service_date,s.service_time FROM appointments a
+     JOIN scheduling_slots s ON s.id=a.slot_id
+     JOIN scheduling_days d ON d.id=s.scheduling_day_id
+     WHERE a.person_id=? AND a.status='active' LIMIT 1"
 );
 
 $free = [];
 $reserved = [];
-foreach ($cpfs as $person) {
-    $check->execute([$person['cpf']]);
+foreach ($people as $person) {
+    $check->execute([(int)$person['id']]);
     $appointment = $check->fetch();
     if ($appointment) {
         $reserved[] = $person + [
@@ -147,20 +133,26 @@ foreach ($cpfs as $person) {
     }
 }
 
-fwrite(STDOUT, "\n============================================================\n");
-fwrite(STDOUT, "CPFs CADASTRADOS E LIVRES PARA FAZER NOVO AGENDAMENTO\n");
-fwrite(STDOUT, "============================================================\n\n");
+fwrite(STDOUT, "\n=======================================================================\n");
+fwrite(STDOUT, "PESSOAS LIVRES PARA TESTAR LOGIN E FAZER NOVO AGENDAMENTO\n");
+fwrite(STDOUT, "=======================================================================\n\n");
 foreach ($free as $person) {
-    fwrite(STDOUT, sprintf("%s  |  %s\n", $person['cpf'], $person['name']));
+    fwrite(STDOUT, sprintf(
+        "CPF %s | Nascimento %s | %s\n",
+        $person['cpf'],
+        formatDateBr($person['birth_date']),
+        $person['name']
+    ));
 }
 
-fwrite(STDOUT, "\n============================================================\n");
-fwrite(STDOUT, "CPFs JA AGENDADOS - SOMENTE PARA SIMULAR OCUPACAO\n");
-fwrite(STDOUT, "============================================================\n\n");
+fwrite(STDOUT, "\n=======================================================================\n");
+fwrite(STDOUT, "PESSOAS JA AGENDADAS - SOMENTE PARA SIMULAR OCUPACAO\n");
+fwrite(STDOUT, "=======================================================================\n\n");
 foreach ($reserved as $person) {
     fwrite(STDOUT, sprintf(
-        "%s  |  %s  ->  %s as %s\n",
+        "CPF %s | Nascimento %s | %s -> %s as %s\n",
         $person['cpf'],
+        formatDateBr($person['birth_date']),
         $person['name'],
         $person['date'],
         $person['time']
@@ -168,7 +160,8 @@ foreach ($reserved as $person) {
 }
 
 fwrite(STDOUT, sprintf(
-    "\nResumo: %d CPFs cadastrados, %d livres para agendar e %d ja reservados.\n",
-    count($cpfs), count($free), count($reserved)
+    "\nResumo: %d pessoas cadastradas, %d livres e %d ja agendadas.\n",
+    count($people), count($free), count($reserved)
 ));
+fwrite(STDOUT, "Acesse http://localhost:8080/ e use CPF + data de nascimento.\n");
 fwrite(STDOUT, "Use somente em ambiente de desenvolvimento/homologacao.\n");
