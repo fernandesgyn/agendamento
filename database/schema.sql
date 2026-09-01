@@ -1,16 +1,17 @@
 CREATE DATABASE IF NOT EXISTS agendamento CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE agendamento;
 
-CREATE TABLE authorized_subjects (
+CREATE TABLE people (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    subject_type ENUM('id','cpf') NOT NULL,
-    subject_value VARCHAR(100) NOT NULL,
-    display_name VARCHAR(150) NULL,
+    cpf CHAR(11) NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    birth_date DATE NOT NULL,
     active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_authorized_subject (subject_type, subject_value),
-    INDEX idx_authorized_active (active)
+    UNIQUE KEY uq_people_cpf (cpf),
+    INDEX idx_people_active (active),
+    INDEX idx_people_name (name)
 ) ENGINE=InnoDB;
 
 CREATE TABLE scheduling_days (
@@ -36,19 +37,19 @@ CREATE TABLE scheduling_slots (
 CREATE TABLE appointments (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     slot_id BIGINT UNSIGNED NOT NULL,
-    subject_type ENUM('id','cpf') NOT NULL,
-    subject_value VARCHAR(100) NOT NULL,
+    person_id BIGINT UNSIGNED NOT NULL,
     status ENUM('active','cancelled') NOT NULL DEFAULT 'active',
-    active_subject_key VARCHAR(120) GENERATED ALWAYS AS (
-        CASE WHEN status='active' THEN CONCAT(subject_type, ':', subject_value) ELSE NULL END
+    active_person_key BIGINT UNSIGNED GENERATED ALWAYS AS (
+        CASE WHEN status='active' THEN person_id ELSE NULL END
     ) STORED,
     booked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     cancelled_at TIMESTAMP NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_active_subject (active_subject_key),
+    UNIQUE KEY uq_active_person (active_person_key),
     INDEX idx_slot_status (slot_id, status),
-    INDEX idx_subject (subject_type, subject_value, status),
-    CONSTRAINT fk_appointments_slot FOREIGN KEY (slot_id) REFERENCES scheduling_slots(id)
+    INDEX idx_person_status (person_id, status),
+    CONSTRAINT fk_appointments_slot FOREIGN KEY (slot_id) REFERENCES scheduling_slots(id),
+    CONSTRAINT fk_appointments_person FOREIGN KEY (person_id) REFERENCES people(id)
 ) ENGINE=InnoDB;
 
 INSERT INTO scheduling_days (service_date) VALUES ('2026-08-14'),('2026-08-15'),('2026-08-16');
