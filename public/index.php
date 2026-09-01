@@ -3,108 +3,117 @@
 declare(strict_types=1);
 require dirname(__DIR__) . '/app/bootstrap.php';
 
-[$subjectType, $subjectValue, $subjectError] = subjectFromRequest();
 $pdo = db();
-$authorized = null;
-
-if (!$subjectError) {
-    try {
-        $authorized = authorizedSubject($pdo, $subjectType, $subjectValue);
-        if (!$authorized) {
-            $subjectError = 'Este CPF/identificador não está cadastrado para realizar o agendamento.';
-        }
-    } catch (PDOException $e) {
-        $subjectError = 'A lista de pessoas autorizadas ainda não foi instalada no banco de dados. Execute a migration indicada no README.';
-    }
-}
-
+$loginError = '';
 $message = '';
-$error = $subjectError;
+$error = '';
+$person = currentBookingPerson($pdo);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error) {
-    verifyCsrf();
-    $postedType = (string)($_POST['subject_type'] ?? '');
-    $postedValue = (string)($_POST['subject_value'] ?? '');
-    $slotId = filter_input(INPUT_POST, 'slot_id', FILTER_VALIDATE_INT);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = (string)($_POST['action'] ?? '');
 
-    if ($postedType !== $subjectType || !hash_equals($subjectValue, $postedValue) || !$slotId) {
-        $error = 'Dados do agendamento inválidos. Atualize a página e tente novamente.';
-    } else {
-        try {
-            $pdo->beginTransaction();
+    if ($action === 'login' && !$person) {
+        verifyCsrf();
+        $cpf = normalizeCpf((string)($_POST['cpf'] ?? ''));
+        $birthDate = normalizeBirthDate((string)($_POST['birth_date'] ?? ''));
 
-            // Revalida a autorização dentro da transação.
-            $stmt = $pdo->prepare("SELECT id FROM authorized_subjects
-                                   WHERE subject_type=? AND subject_value=? AND active=1
-                                   LIMIT 1 FOR UPDATE");
-            $stmt->execute([$subjectType, $subjectValue]);
-            if (!$stmt->fetchColumn()) {
-                throw new RuntimeException('Este CPF/identificador não está mais autorizado a realizar o agendamento.');
-            }
+        if (!validCpf($cpf) || !$birthDate) {
+            $loginError = 'Cadastro não encontrado. Confira o CPF e a data de nascimento informados.';
+        } else {
+            $stmt = $pdo->prepare('SELECT id FROM people WHERE cpf=? AND birth_date=? AND active=1 LIMIT 1');
+            $stmt->execute([$cpf, $birthDate]);
+            $personId = (int)($stmt->fetchColumn() ?: 0);
 
-            // O agendamento público é definitivo. Depois da primeira confirmação,
-            // o cidadão não pode trocar nem excluir data/horário pelo link recebido.
-            $stmt = $pdo->prepare("SELECT id, slot_id FROM appointments
-                                   WHERE subject_type=? AND subject_value=? AND status='active'
-                                   ORDER BY id DESC LIMIT 1 FOR UPDATE");
-            $stmt->execute([$subjectType, $subjectValue]);
-            $existing = $stmt->fetch();
-
-            if ($existing) {
-                throw new RuntimeException('Seu agendamento já foi confirmado e não pode ser alterado ou excluído por este link.');
-            }
-
-            $stmt = $pdo->prepare("SELECT s.id, s.capacity, s.active, d.active day_active, d.service_date, s.service_time
-                                   FROM scheduling_slots s
-                                   JOIN scheduling_days d ON d.id=s.scheduling_day_id
-                                   WHERE s.id=? FOR UPDATE");
-            $stmt->execute([$slotId]);
-            $slot = $stmt->fetch();
-            if (!$slot || !$slot['active'] || !$slot['day_active']) {
-                throw new RuntimeException('Este horário não está mais disponível.');
-            }
-
-            $stmt = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE slot_id=? AND status='active'");
-            $stmt->execute([$slotId]);
-            $used = (int)$stmt->fetchColumn();
-            if ($used >= (int)$slot['capacity']) {
-                throw new RuntimeException('As vagas desse horário acabaram. Escolha outro horário disponível.');
-            }
-
-            $stmt = $pdo->prepare("INSERT INTO appointments (slot_id, subject_type, subject_value) VALUES (?,?,?)");
-            $stmt->execute([$slotId, $subjectType, $subjectValue]);
-            $pdo->commit();
-            $message = 'Agendamento confirmado para ' . formatDateBr($slot['service_date']) . ' às ' . substr($slot['service_time'], 0, 5) . '.';
-        } catch (Throwable $ex) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-
-            if ($ex instanceof RuntimeException) {
-                $error = $ex->getMessage();
-            } elseif ($ex instanceof PDOException && $ex->getCode() === '23000') {
-                $error = 'Seu agendamento já foi confirmado e não pode ser alterado ou excluído por este link.';
+            if ($personId <= 0) {
+                $loginError = 'Cadastro não encontrado. Confira o CPF e a data de nascimento informados.';
             } else {
-                $error = 'Não foi possível gravar o agendamento. Tente novamente.';
+                loginBookingPerson($personId);
+                header('Location: /');
+                exit;
+            }
+        }
+    } elseif ($action === 'book' && $person) {
+        verifyCsrf();
+        $slotId = filter_input(INPUT_POST, 'slot_id', FILTER_VALIDATE_INT);
+
+        if (!$slotId) {
+            $error = 'Horário inválido. Atualize a página e tente novamente.';
+        } else {
+            try {
+                $pdo->beginTransaction();
+
+                // Bloqueia a pessoa para impedir dois agendamentos simultâneos usando a mesma conta.
+                $stmt = $pdo->prepare('SELECT id FROM people WHERE id=? AND active=1 LIMIT 1 FOR UPDATE');
+                $stmt->execute([(int)$person['id']]);
+                if (!$stmt->fetchColumn()) {
+                    throw new RuntimeException('Seu cadastro não está disponível para realizar o agendamento.');
+                }
+
+                // O agendamento é definitivo depois da primeira confirmação.
+                $stmt = $pdo->prepare("SELECT id FROM appointments WHERE person_id=? AND status='active' ORDER BY id DESC LIMIT 1 FOR UPDATE");
+                $stmt->execute([(int)$person['id']]);
+                if ($stmt->fetchColumn()) {
+                    throw new RuntimeException('Seu agendamento já foi confirmado e não pode ser alterado ou excluído.');
+                }
+
+                // O FOR UPDATE serializa tentativas simultâneas para o mesmo horário.
+                $stmt = $pdo->prepare("SELECT s.id, s.capacity, s.active, d.active AS day_active, d.service_date, s.service_time
+                                       FROM scheduling_slots s
+                                       JOIN scheduling_days d ON d.id=s.scheduling_day_id
+                                       WHERE s.id=? FOR UPDATE");
+                $stmt->execute([$slotId]);
+                $slot = $stmt->fetch();
+
+                if (!$slot || !(int)$slot['active'] || !(int)$slot['day_active']) {
+                    throw new RuntimeException('Este horário não está mais disponível.');
+                }
+
+                $stmt = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE slot_id=? AND status='active'");
+                $stmt->execute([$slotId]);
+                $used = (int)$stmt->fetchColumn();
+
+                if ($used >= (int)$slot['capacity']) {
+                    throw new RuntimeException('As vagas desse horário acabaram. Escolha outro horário disponível.');
+                }
+
+                $stmt = $pdo->prepare('INSERT INTO appointments (slot_id, person_id) VALUES (?, ?)');
+                $stmt->execute([$slotId, (int)$person['id']]);
+                $pdo->commit();
+
+                $message = 'Agendamento confirmado para ' . formatDateBr($slot['service_date']) . ' às ' . substr($slot['service_time'], 0, 5) . '.';
+            } catch (Throwable $ex) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+
+                if ($ex instanceof RuntimeException) {
+                    $error = $ex->getMessage();
+                } elseif ($ex instanceof PDOException && $ex->getCode() === '23000') {
+                    $error = 'Seu agendamento já foi confirmado e não pode ser alterado ou excluído.';
+                } else {
+                    $error = 'Não foi possível gravar o agendamento. Tente novamente.';
+                }
             }
         }
     }
 }
 
+// Recarrega a pessoa depois das ações para refletir eventuais mudanças de sessão/cadastro.
+$person = currentBookingPerson($pdo);
 $current = null;
 $days = [];
-if (!$subjectError) {
+
+if ($person) {
     $stmt = $pdo->prepare("SELECT a.id, d.service_date, s.service_time
                            FROM appointments a
                            JOIN scheduling_slots s ON s.id=a.slot_id
                            JOIN scheduling_days d ON d.id=s.scheduling_day_id
-                           WHERE a.subject_type=? AND a.subject_value=? AND a.status='active'
+                           WHERE a.person_id=? AND a.status='active'
                            ORDER BY a.id DESC LIMIT 1");
-    $stmt->execute([$subjectType, $subjectValue]);
+    $stmt->execute([(int)$person['id']]);
     $current = $stmt->fetch() ?: null;
 
-    // Só carrega opções quando a pessoa ainda não possui agendamento.
     if (!$current) {
-        $rows = $pdo->query("SELECT d.id day_id, d.service_date, s.id slot_id, s.service_time, s.capacity,
-                            (SELECT COUNT(*) FROM appointments a WHERE a.slot_id=s.id AND a.status='active') used
+        $rows = $pdo->query("SELECT d.service_date, s.id AS slot_id, s.service_time, s.capacity,
+                            (SELECT COUNT(*) FROM appointments a WHERE a.slot_id=s.id AND a.status='active') AS used
                             FROM scheduling_days d
                             JOIN scheduling_slots s ON s.scheduling_day_id=d.id
                             WHERE d.active=1 AND s.active=1
@@ -118,13 +127,9 @@ if (!$subjectError) {
             $timeKey = substr($row['service_time'], 0, 5);
 
             if (!isset($days[$date])) {
-                $days[$date] = [
-                    'available' => 0,
-                    'slots' => [],
-                ];
+                $days[$date] = ['available' => 0, 'slots' => []];
             }
 
-            // Chave por horário: garante que cada hora seja exibida uma única vez em cada data.
             $row['left'] = $left;
             $days[$date]['slots'][$timeKey] = $row;
         }
@@ -149,7 +154,7 @@ $firstDate = $days ? array_key_first($days) : null;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#005b45">
-<title><?= e(env('APP_NAME','Agendamento AGEHAB')) ?></title>
+<title><?= e(env('APP_NAME', 'Agendamento AGEHAB')) ?></title>
 <link rel="stylesheet" href="/assets/app.css">
 <script src="/assets/app.js" defer></script>
 </head>
@@ -157,7 +162,41 @@ $firstDate = $days ? array_key_first($days) : null;
 <header class="topbar">
   <div class="brand"><img src="https://aluguelsocial.agehab.go.gov.br/img/agehab.svg" alt="AGEHAB"><span>Agendamento de Atendimento</span></div>
 </header>
+
 <main class="container">
+<?php if (!$person): ?>
+  <section class="hero login-hero">
+    <span class="eyebrow">ACESSO AO AGENDAMENTO</span>
+    <h1>Identifique-se para continuar</h1>
+    <p>Informe seu CPF e sua data de nascimento para acessar as datas e horários disponíveis.</p>
+  </section>
+
+  <?php if ($loginError): ?><div class="alert error"><?= e($loginError) ?></div><?php endif; ?>
+
+  <section class="public-login-card" aria-labelledby="login-title">
+    <div class="login-symbol">✓</div>
+    <h2 id="login-title">Acessar agendamento</h2>
+    <p>Use os mesmos dados do seu cadastro.</p>
+    <form method="post" autocomplete="on">
+      <input type="hidden" name="_token" value="<?= e(csrfToken()) ?>">
+      <input type="hidden" name="action" value="login">
+
+      <label for="cpf">CPF</label>
+      <input id="cpf" name="cpf" type="text" inputmode="numeric" autocomplete="username" maxlength="14" placeholder="000.000.000-00" required autofocus>
+
+      <label for="birth_date">Data de nascimento</label>
+      <input id="birth_date" name="birth_date" type="date" autocomplete="bday" required>
+
+      <button class="primary login-submit" type="submit">ENTRAR</button>
+    </form>
+    <small>Se seus dados não forem localizados, o sistema informará que não existe cadastro disponível para agendamento.</small>
+  </section>
+<?php else: ?>
+  <div class="session-bar">
+    <div><small>AGENDAMENTO PARA</small><strong><?= e($person['name']) ?></strong></div>
+    <form method="post" action="/logout.php"><input type="hidden" name="_token" value="<?= e(csrfToken()) ?>"><button type="submit" class="session-logout">Sair</button></form>
+  </div>
+
   <section class="hero">
     <span class="eyebrow">ATENDIMENTO PRESENCIAL</span>
     <?php if ($current): ?>
@@ -165,96 +204,80 @@ $firstDate = $days ? array_key_first($days) : null;
       <p>Confira abaixo a data e o horário do seu atendimento.</p>
     <?php else: ?>
       <h1>Escolha sua data e horário</h1>
-      <p>Primeiro escolha o dia. Depois toque no horário desejado para confirmar. Após a confirmação, o agendamento não poderá ser alterado.</p>
+      <p>Escolha o dia e depois toque no horário desejado. Após a confirmação, o agendamento não poderá ser alterado.</p>
     <?php endif; ?>
   </section>
 
   <?php if ($message): ?><div class="alert success"><?= e($message) ?></div><?php endif; ?>
   <?php if ($error): ?><div class="alert error"><?= e($error) ?></div><?php endif; ?>
 
-  <?php if (!$subjectError): ?>
-    <?php if (!empty($authorized['display_name'])): ?>
-      <div class="authorized-person"><small>AGENDAMENTO PARA</small><strong><?= e($authorized['display_name']) ?></strong></div>
-    <?php endif; ?>
+  <?php if ($current): ?>
+    <section class="current">
+      <strong>AGENDAMENTO CONFIRMADO</strong>
+      <span><?= e(formatDateBr($current['service_date'])) ?> às <?= e(substr($current['service_time'], 0, 5)) ?></span>
+      <small>Este agendamento é definitivo. Não é possível alterar a data, o horário ou excluir pelo acesso público.</small>
+    </section>
+  <?php elseif (!$days): ?>
+    <div class="empty">No momento não existem datas e horários disponíveis para agendamento.</div>
+  <?php else: ?>
+    <div class="section-title">
+      <span class="step-number">1</span>
+      <div><small>PRIMEIRO PASSO</small><h2>Escolha o dia</h2></div>
+    </div>
 
-    <?php if ($current): ?>
-      <div class="current">
-        <strong>SEU AGENDAMENTO</strong>
-        <span><?= e(formatDateBr($current['service_date'])) ?> às <?= e(substr($current['service_time'],0,5)) ?></span>
-        <small>Agendamento definitivo. Não é possível alterar a data, o horário ou excluir este agendamento pelo link recebido.</small>
-      </div>
-    <?php elseif (!$days): ?>
-      <div class="empty"><h2>Não há horários disponíveis</h2><p>As vagas disponíveis para agendamento foram preenchidas ou desativadas.</p></div>
-    <?php else: ?>
+    <div class="date-grid">
+      <?php foreach ($days as $date => $day): ?>
+        <?php $dateLabel = formatDateBr($date); ?>
+        <button type="button" class="date-card <?= $date === $firstDate ? 'selected' : '' ?>" data-date="<?= e($date) ?>" data-date-label="<?= e($dateLabel) ?>" aria-pressed="<?= $date === $firstDate ? 'true' : 'false' ?>">
+          <span class="date-main">
+            <small><?= e(weekdayBr($date)) ?></small>
+            <strong><?= e($dateLabel) ?></strong>
+            <span>Toque para selecionar</span>
+          </span>
+          <span class="date-vacancies"><strong><?= (int)$day['available'] ?></strong><small><?= (int)$day['available'] === 1 ? 'VAGA DISPONÍVEL' : 'VAGAS DISPONÍVEIS' ?></small></span>
+        </button>
+      <?php endforeach; ?>
+    </div>
+
+    <section class="slot-section">
       <div class="section-title">
-        <span class="step-number">1</span>
-        <div><small>PRIMEIRO</small><h2>Escolha o dia</h2></div>
+        <span class="step-number">2</span>
+        <div><small>SEGUNDO PASSO</small><h2>Escolha o horário</h2></div>
       </div>
+      <p id="selectedDayLabel" class="selected-day-label"><?= e(formatDateBr((string)$firstDate)) ?></p>
+      <p class="slot-help muted">Os horários sem vagas não são exibidos.</p>
 
-      <div class="date-grid" id="dateGrid">
-        <?php $first=true; foreach ($days as $date=>$day): $dt = new DateTimeImmutable($date); ?>
-          <button class="date-card<?= $first?' selected':'' ?>" type="button"
-                  data-date="<?= e($date) ?>"
-                  data-date-label="<?= e(formatDateBr($date)) ?>"
-                  aria-pressed="<?= $first?'true':'false' ?>">
-            <span class="date-main">
-              <small><?= e(weekdayBr($date)) ?></small>
-              <strong><?= e($dt->format('d/m')) ?></strong>
-              <span><?= e($dt->format('Y')) ?></span>
-            </span>
-            <span class="date-vacancies">
-              <strong><?= (int)$day['available'] ?></strong>
-              <small><?= (int)$day['available'] === 1 ? 'vaga disponível' : 'vagas disponíveis' ?></small>
-            </span>
-          </button>
-        <?php $first=false; endforeach; ?>
-      </div>
-
-      <section class="slot-section">
-        <div class="section-title">
-          <span class="step-number">2</span>
-          <div><small>DEPOIS</small><h2>Escolha o horário</h2></div>
-        </div>
-        <div class="selected-day-label" id="selectedDayLabel"><?= $firstDate ? e(formatDateBr($firstDate)) : '' ?></div>
-        <p class="muted slot-help">Os números em destaque mostram quantas vagas ainda restam em cada horário.</p>
-
-        <div class="slot-grid" id="slotGrid">
-          <?php foreach ($days as $date=>$day): ?>
-            <?php foreach ($day['slots'] as $slot): $left=(int)$slot['left']; ?>
-              <button class="slot" type="button"
-                      data-slot-date="<?= e($date) ?>"
-                      data-slot-id="<?= (int)$slot['slot_id'] ?>"
-                      data-date-label="<?= e(formatDateBr($date)) ?>"
-                      data-time="<?= e(substr($slot['service_time'],0,5)) ?>"
-                      <?= $date === $firstDate ? '' : 'hidden' ?>>
-                <strong class="slot-time"><?= e(substr($slot['service_time'],0,5)) ?></strong>
-                <span class="slot-vacancies"><b><?= $left ?></b> <?= $left===1?'vaga restante':'vagas restantes' ?></span>
-              </button>
-            <?php endforeach; ?>
+      <div class="slot-grid">
+        <?php foreach ($days as $date => $day): ?>
+          <?php foreach ($day['slots'] as $timeKey => $slot): ?>
+            <button type="button" class="slot" data-slot-id="<?= (int)$slot['slot_id'] ?>" data-slot-date="<?= e($date) ?>" data-date-label="<?= e(formatDateBr($date)) ?>" data-time="<?= e($timeKey) ?>" <?= $date !== $firstDate ? 'hidden' : '' ?>>
+              <span class="slot-time"><?= e($timeKey) ?></span>
+              <span class="slot-vacancies"><b><?= (int)$slot['left'] ?></b> <?= (int)$slot['left'] === 1 ? 'vaga restante' : 'vagas restantes' ?></span>
+            </button>
           <?php endforeach; ?>
-        </div>
-      </section>
-    <?php endif; ?>
-  <?php endif; ?>
-</main>
+        <?php endforeach; ?>
+      </div>
+    </section>
 
-<?php if (!$current && !$subjectError && $days): ?>
-<div class="modal" id="confirmModal" hidden>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <button class="modal-close" type="button" data-close aria-label="Fechar">×</button>
-    <div class="modal-icon">✓</div><h2 id="modalTitle">Confirmar agendamento?</h2>
-    <p>Você deseja agendar o atendimento para:</p><strong class="modal-choice" id="modalChoice"></strong>
-    <p><strong>Atenção:</strong> depois de confirmar, você não poderá alterar a data, o horário ou excluir o agendamento.</p>
-    <form method="post">
-      <input type="hidden" name="_token" value="<?= e(csrfToken()) ?>">
-      <input type="hidden" name="subject_type" value="<?= e($subjectType) ?>">
-      <input type="hidden" name="subject_value" value="<?= e($subjectValue) ?>">
-      <input type="hidden" name="slot_id" id="modalSlotId">
-      <button class="primary" type="submit">SIM, CONFIRMAR</button>
-      <button class="secondary" type="button" data-close>Voltar e conferir</button>
-    </form>
-  </div>
-</div>
+    <div id="confirmModal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <button type="button" class="modal-close" data-close aria-label="Fechar">×</button>
+        <div class="modal-icon">✓</div>
+        <h2 id="modal-title">Confirmar agendamento?</h2>
+        <p>Confira com atenção. Depois de confirmar, você <strong>não poderá alterar ou excluir</strong> o agendamento.</p>
+        <strong id="modalChoice" class="modal-choice"></strong>
+        <form method="post">
+          <input type="hidden" name="_token" value="<?= e(csrfToken()) ?>">
+          <input type="hidden" name="action" value="book">
+          <input id="modalSlotId" type="hidden" name="slot_id" value="">
+          <button class="primary" type="submit">SIM, CONFIRMAR</button>
+          <button class="secondary" type="button" data-close>VOLTAR E CONFERIR</button>
+        </form>
+      </div>
+    </div>
+  <?php endif; ?>
 <?php endif; ?>
-<footer>AGEHAB · Agência Goiana de Habitação</footer>
-</body></html>
+</main>
+<footer>AGEHAB · Agendamento de atendimento</footer>
+</body>
+</html>
