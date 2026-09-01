@@ -41,8 +41,12 @@ function db(): PDO
     static $pdo;
     if ($pdo instanceof PDO) return $pdo;
 
-    $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
-        env('DB_HOST', '127.0.0.1'), env('DB_PORT', '3306'), env('DB_DATABASE', 'agendamento'));
+    $dsn = sprintf(
+        'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
+        env('DB_HOST', '127.0.0.1'),
+        env('DB_PORT', '3306'),
+        env('DB_DATABASE', 'agendamento')
+    );
 
     $pdo = new PDO($dsn, env('DB_USERNAME', 'root'), env('DB_PASSWORD', ''), [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -90,29 +94,48 @@ function validCpf(string $cpf): bool
     return true;
 }
 
-function subjectFromRequest(): array
+function normalizeBirthDate(string $value): ?string
 {
-    if (!empty($_GET['id'])) {
-        $value = trim((string)$_GET['id']);
-        if (!preg_match('/^[A-Za-z0-9._-]{1,100}$/', $value)) return ['', '', 'Identificador inválido.'];
-        return ['id', $value, ''];
+    $value = trim($value);
+    $formats = ['Y-m-d', 'd/m/Y'];
+
+    foreach ($formats as $format) {
+        $date = DateTimeImmutable::createFromFormat('!' . $format, $value);
+        if (!$date || $date->format($format) !== $value) continue;
+
+        $normalized = $date->format('Y-m-d');
+        if ($normalized < '1900-01-01' || $normalized > date('Y-m-d')) return null;
+        return $normalized;
     }
-    if (!empty($_GET['cpf'])) {
-        $value = normalizeCpf((string)$_GET['cpf']);
-        if (!validCpf($value)) return ['', '', 'CPF inválido.'];
-        return ['cpf', $value, ''];
-    }
-    return ['', '', 'O link de agendamento não contém um identificador válido.'];
+
+    return null;
 }
 
-function authorizedSubject(PDO $pdo, string $type, string $value): ?array
+function currentBookingPerson(PDO $pdo): ?array
 {
-    $stmt = $pdo->prepare("SELECT id, subject_type, subject_value, display_name
-                           FROM authorized_subjects
-                           WHERE subject_type=? AND subject_value=? AND active=1
-                           LIMIT 1");
-    $stmt->execute([$type, $value]);
-    return $stmt->fetch() ?: null;
+    $personId = (int)($_SESSION['booking_person_id'] ?? 0);
+    if ($personId <= 0) return null;
+
+    $stmt = $pdo->prepare('SELECT id, cpf, name, birth_date FROM people WHERE id=? AND active=1 LIMIT 1');
+    $stmt->execute([$personId]);
+    $person = $stmt->fetch() ?: null;
+
+    if (!$person) unset($_SESSION['booking_person_id']);
+    return $person;
+}
+
+function loginBookingPerson(int $personId): void
+{
+    session_regenerate_id(true);
+    $_SESSION['booking_person_id'] = $personId;
+    unset($_SESSION['csrf']);
+}
+
+function logoutBookingPerson(): void
+{
+    unset($_SESSION['booking_person_id']);
+    session_regenerate_id(true);
+    unset($_SESSION['csrf']);
 }
 
 function adminLoggedIn(): bool
