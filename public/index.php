@@ -153,14 +153,14 @@ $firstDate = $days ? array_key_first($days) : null;
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#005b45">
+<meta name="theme-color" content="#00862F">
 <title><?= e(env('APP_NAME', 'Agendamento AGEHAB')) ?></title>
 <link rel="stylesheet" href="/assets/app.css">
 <script src="/assets/app.js" defer></script>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><img src="https://aluguelsocial.agehab.go.gov.br/img/agehab.svg" alt="AGEHAB"><span>Agendamento de Atendimento</span></div>
+  <div class="brand"><img src="/assets/logo.svg" alt="AGEHAB"></div>
 </header>
 
 <main class="container">
@@ -185,7 +185,7 @@ $firstDate = $days ? array_key_first($days) : null;
       <input id="cpf" name="cpf" type="text" inputmode="numeric" autocomplete="username" maxlength="14" placeholder="000.000.000-00" required autofocus>
 
       <label for="birth_date">Data de nascimento</label>
-      <input id="birth_date" name="birth_date" type="date" autocomplete="bday" required>
+      <input id="birth_date" name="birth_date" type="text" inputmode="numeric" autocomplete="bday" maxlength="10" placeholder="dd/mm/aaaa" required>
 
       <button class="primary login-submit" type="submit">ENTRAR</button>
     </form>
@@ -216,6 +216,15 @@ $firstDate = $days ? array_key_first($days) : null;
       <strong>AGENDAMENTO CONFIRMADO</strong>
       <span><?= e(formatDateBr($current['service_date'])) ?> às <?= e(substr($current['service_time'], 0, 5)) ?></span>
       <small>Este agendamento é definitivo. Não é possível alterar a data, o horário ou excluir pelo acesso público.</small>
+    </section>
+
+    <section class="pending-card" aria-labelledby="pending-title">
+      <div class="pending-icon">!</div>
+      <div class="pending-content">
+        <strong id="pending-title">Conferir / Visualizar Pendências Documentais</strong>
+        <span>Consulte se existem pendências documentais relacionadas ao seu atendimento.</span>
+        <a href="https://palladioweb.agehab.go.gov.br/noautentic/LoginVisualizacaoPendencias.aspx" target="_blank" rel="noopener noreferrer">Acesse Aqui</a>
+      </div>
     </section>
   <?php elseif (!$days): ?>
     <div class="empty">No momento não existem datas e horários disponíveis para agendamento.</div>
@@ -278,6 +287,5 @@ $firstDate = $days ? array_key_first($days) : null;
   <?php endif; ?>
 <?php endif; ?>
 </main>
-<footer>AGEHAB · Agendamento de atendimento</footer>
 </body>
 </html>
