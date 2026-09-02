@@ -6,4 +6,5 @@ if (ini_get('session.use_cookies')) {
     setcookie(session_name(),'',time()-42000,$p['path'],$p['domain']??'',(bool)$p['secure'],(bool)$p['httponly']);
 }
 session_destroy();
-header('Location: /admin/login.php');
+header('Location: ' . appPath('admin/login.php'));
+exit;
