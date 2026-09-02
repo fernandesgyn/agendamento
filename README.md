@@ -1,72 +1,159 @@
 # Agendamento AGEHAB
 
-Sistema de agendamento de data e hora em **PHP 8.1+ e MySQL 8+**, pensado prioritariamente para uso em celular.
+Sistema de agendamento em **PHP 8.1+ e MySQL/MariaDB**, mobile-first, com login público por CPF + data de nascimento e proteção transacional contra overbooking.
+
+## URL de produção
+
+```text
+https://eloconnections.com.br/agendamento/
+```
+
+Painel administrativo:
+
+```text
+https://eloconnections.com.br/agendamento/admin/
+```
+
+O projeto está preparado para funcionar em uma subpasta. As URLs de assets, redirects, logout e painel usam `APP_BASE_PATH=/agendamento`.
+
+## Publicação na Hostinger
+
+### 1. Banco de dados
+
+No hPanel, crie o banco MySQL e o usuário. Depois abra o banco no phpMyAdmin e importe:
+
+```text
+database/schema.sql
+```
+
+O `schema.sql` **não contém `CREATE DATABASE` nem `USE`**. Ele deve ser importado dentro do banco já criado no hPanel.
+
+O projeto não utiliza migrations.
+
+### 2. Arquivos
+
+Envie o conteúdo completo deste repositório para:
+
+```text
+public_html/agendamento/
+```
+
+A estrutura ficará, por exemplo:
+
+```text
+public_html/
+└── agendamento/
+    ├── .htaccess
+    ├── .env
+    ├── app/
+    ├── database/
+    ├── public/
+    └── ...
+```
+
+Não é necessário mover manualmente o conteúdo de `public/`. O `.htaccess` da raiz encaminha as URLs para a pasta `public` sem mostrar `/public` no endereço.
+
+O mesmo `.htaccess` bloqueia acesso HTTP direto a `app/`, `database/`, `.env`, arquivos Git, README e seed.
+
+### 3. Configuração `.env`
+
+Copie `.env.example` para `.env` e preencha os dados reais fornecidos pela Hostinger:
+
+```env
+APP_ENV=production
+APP_URL=https://eloconnections.com.br/agendamento
+APP_BASE_PATH=/agendamento
+APP_NAME=Agendamento AGEHAB
+APP_TIMEZONE=America/Sao_Paulo
+
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=SEU_BANCO_HOSTINGER
+DB_USERNAME=SEU_USUARIO_HOSTINGER
+DB_PASSWORD=SUA_SENHA_HOSTINGER
+
+ADMIN_USER=admin
+ADMIN_PASSWORD=UMA_SENHA_FORTE
+```
+
+Use exatamente o host, nome do banco, usuário e senha exibidos no hPanel caso sejam diferentes dos exemplos.
+
+### 4. PHP
+
+Use PHP 8.1 ou superior e confirme que `pdo_mysql` está habilitado.
+
+### 5. Testes após publicar
+
+Abra:
+
+```text
+https://eloconnections.com.br/agendamento/
+```
+
+Verifique:
+
+- carregamento da logo e estilos;
+- login por CPF + data de nascimento;
+- escolha de data e horário;
+- confirmação do agendamento;
+- logout;
+- card de pendências documentais.
+
+Depois teste:
+
+```text
+https://eloconnections.com.br/agendamento/admin/
+```
+
+Verifique login administrativo, cadastro de pessoas, datas, horários, ocupação e exportação CSV.
 
 ## Fluxo público
 
-O cidadão não recebe mais CPF ou identificador na URL.
-
-O endereço público é simplesmente:
-
-```text
-https://seu-dominio.gov.br/
-```
-
-Na tela inicial a pessoa informa:
+A pessoa informa:
 
 - CPF;
-- data de nascimento.
+- data de nascimento no formato `dd/mm/aaaa`.
 
-O sistema procura um cadastro ativo com a combinação informada. Se não localizar, exibe:
+Se a combinação não estiver cadastrada e ativa, o sistema informa que o cadastro não foi encontrado.
 
-```text
-Cadastro não encontrado. Confira o CPF e a data de nascimento informados.
-```
+Quando autenticada, somente o `person_id` é mantido na sessão. CPF e data de nascimento não são enviados na URL.
 
-Quando os dados são encontrados, o sistema grava somente o `person_id` na sessão do servidor e libera as datas e horários disponíveis. O CPF e a data de nascimento não ficam na URL.
+Depois da primeira confirmação, o agendamento é definitivo no acesso público.
 
-Depois da primeira confirmação, o agendamento é definitivo no acesso público e não pode ser alterado ou excluído pelo cidadão.
-
-## Funcionalidades
-
-- Login público por CPF + data de nascimento.
-- Cadastro de pessoa com nome, CPF e data de nascimento.
-- CPF único no banco de dados.
-- Um único agendamento ativo por pessoa.
-- Datas e horários parametrizáveis pelo painel administrativo.
-- Capacidade configurável por horário (inicialmente 6 vagas).
-- Horários lotados deixam de ser exibidos.
-- Cada data mostra o total de vagas ainda disponíveis.
-- Confirmação explícita antes de gravar o agendamento.
-- `SELECT ... FOR UPDATE` para serializar tentativas simultâneas no mesmo horário e evitar overbooking.
-- Painel administrativo com pessoas, situação LIVRE/AGENDADO, ocupação por data/horário e relação dos agendamentos.
-- Exportação CSV com nome, CPF, nascimento, data e hora agendada.
-- Interface mobile-first inspirada na identidade visual do Aluguel Social/AGEHAB.
-
-## Banco de dados: sem migrations
-
-Este projeto **não usa migrations**.
-
-`database/schema.sql` é a fonte única e completa da estrutura do banco. Ele contém todas as tabelas, índices, relacionamentos, datas e horários iniciais necessários.
+## Banco de dados
 
 Tabelas:
 
 - `people`: nome, CPF, data de nascimento e situação cadastral;
 - `scheduling_days`: datas disponíveis;
-- `scheduling_slots`: horários, capacidade e disponibilidade por data;
-- `appointments`: agendamentos realizados, ligados à pessoa por `person_id`.
+- `scheduling_slots`: horários, capacidade e situação;
+- `appointments`: agendamentos ligados à pessoa por `person_id`.
 
-Os seeds inserem apenas massa de teste. Eles não criam nem alteram tabelas.
+O banco possui restrição para apenas um agendamento ativo por pessoa.
 
-## Instalação
+## Concorrência
 
-1. Execute `database/schema.sql` no MySQL.
-2. Copie `.env.example` para `.env` e informe as credenciais do banco e do administrador.
-3. Garanta PHP 8.1+ com `pdo_mysql` habilitado.
-4. Em produção, use a pasta `public/` como DocumentRoot.
-5. Acesse `/admin/` para administrar pessoas, datas, horários e vagas.
+A confirmação utiliza transação MySQL/InnoDB e `SELECT ... FOR UPDATE`.
 
-Servidor local:
+Quando duas pessoas disputam simultaneamente a última vaga do mesmo horário, a linha do horário é bloqueada. A segunda transação aguarda, reconta as vagas após a primeira concluir e é recusada se a capacidade já tiver sido atingida.
+
+## Massa de teste
+
+`database/seeds/seed_cpfs.php` insere pessoas sintéticas e alguns agendamentos para desenvolvimento/homologação. O seed não cria nem altera tabelas.
+
+Não execute o seed em produção.
+
+## Ambiente local
+
+Para executar localmente com a pasta `public` como DocumentRoot, configure temporariamente:
+
+```env
+APP_ENV=local
+APP_URL=http://localhost:8080
+APP_BASE_PATH=
+```
+
+Depois rode:
 
 ```bash
 php -S localhost:8080 -t public
@@ -78,124 +165,35 @@ Acesso público:
 http://localhost:8080/
 ```
 
-Painel administrativo:
+Painel:
 
 ```text
 http://localhost:8080/admin/
 ```
 
-### Banco criado com versão anterior
+## Segurança
 
-Como o projeto não usa migrations, em desenvolvimento/homologação recrie o banco e execute novamente o schema completo.
-
-Exemplo:
-
-```bat
-mysql -u root -p -e "DROP DATABASE IF EXISTS agendamento;"
-mysql -u root -p < database\schema.sql
-```
-
-Depois, se desejar massa de teste:
-
-```bat
-seed.bat
-```
-
-## Pessoas
-
-No painel administrativo cada pessoa possui:
-
-- nome completo;
-- CPF;
-- data de nascimento;
-- cadastro ativo/inativo;
-- situação do agendamento: LIVRE ou AGENDADO.
-
-**LIVRE** significa que a pessoa pode fazer login e escolher seu primeiro horário.
-
-**AGENDADO** significa que ela já confirmou e não poderá selecionar outro horário pelo acesso público.
-
-## Seed para teste
-
-`database/seeds/seed_cpfs.php` cria 60 pessoas sintéticas com:
-
-- CPF válido para teste;
-- nome;
-- data de nascimento.
-
-A maioria fica sem agendamento. Uma parte recebe reservas para simular horários lotados ou com poucas vagas.
-
-Ao executar:
-
-```bat
-seed.bat
-```
-
-o terminal mostra, por exemplo:
-
-```text
-PESSOAS LIVRES PARA TESTAR LOGIN E FAZER NOVO AGENDAMENTO
-
-CPF ........... | Nascimento dd/mm/aaaa | Pessoa Teste XX
-```
-
-Use o CPF e a data de nascimento exibidos e acesse:
-
-```text
-http://localhost:8080/
-```
-
-O seed também mostra separadamente as pessoas já agendadas usadas apenas para simular ocupação.
-
-## Datas e horários iniciais
-
-O `schema.sql` cria inicialmente:
-
-- 14/08/2026
-- 15/08/2026
-- 16/08/2026
-
-Horários:
-
-- 07:00
-- 08:00
-- 09:00
-- 10:00
-- 11:00
-- 13:00
-- 14:00
-- 15:00
-- 16:00
-- 17:00
-- 18:00
-- 19:00
-
-Cada horário começa com capacidade de 6 vagas.
-
-## Concorrência e segurança
-
-- PDO com prepared statements.
-- CSRF em login, agendamento e operações administrativas.
-- Sessões com cookie `HttpOnly` e `SameSite=Lax`.
-- Regeneração do ID da sessão após login.
-- CPF não é transportado na URL.
-- Pessoa precisa combinar CPF + data de nascimento para acessar.
-- CPF é único em `people`.
-- Restrição no banco impede mais de um agendamento ativo por pessoa.
-- A linha da pessoa é bloqueada durante a confirmação para impedir dois agendamentos simultâneos pela mesma conta.
-- A linha do horário é bloqueada com `FOR UPDATE` antes da contagem das vagas, impedindo que acessos simultâneos ultrapassem a capacidade.
-- Recomenda-se HTTPS obrigatório em produção.
-- Não versionar `.env`.
-- Trocar a senha administrativa antes da publicação.
+- PDO com prepared statements;
+- CSRF em login e gravações;
+- sessão com cookie `HttpOnly`, `SameSite=Lax` e `Secure` em HTTPS;
+- cookie restrito ao caminho `/agendamento` em produção;
+- regeneração do ID da sessão após login;
+- CPF fora da URL;
+- restrição de um agendamento ativo por pessoa;
+- bloqueio transacional para impedir overbooking;
+- `.env` não versionado e bloqueado via `.htaccess`;
+- diretórios internos bloqueados para acesso HTTP;
+- `X-Content-Type-Options: nosniff`;
+- `Referrer-Policy: strict-origin-when-cross-origin`.
 
 ## Estrutura
 
 ```text
+.htaccess            roteamento e proteção para Hostinger
 app/                 bootstrap, banco, helpers e autenticação
-public/              aplicação pública
+public/              aplicação web
 public/admin/        painel administrativo
-database/schema.sql  estrutura completa e única do banco
+database/schema.sql  estrutura completa do banco, sem migrations
 database/seeds/      massa de teste
-seed.bat             atalho do seed no Windows
-.env.example         parâmetros de ambiente
+.env.example         configuração-base de produção
 ```
