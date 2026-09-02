@@ -1,19 +1,31 @@
 document.addEventListener('DOMContentLoaded',()=>{
-  const brandLogo=document.querySelector('.brand img');
-  if(brandLogo){
-    brandLogo.src='/assets/logo.svg';
-    brandLogo.alt='AGEHAB';
-    brandLogo.style.width='88px';
-    brandLogo.style.height='48px';
-    brandLogo.style.objectFit='contain';
-    brandLogo.style.background='transparent';
-    brandLogo.style.borderRadius='0';
-    brandLogo.style.padding='0';
-  }
+  const cpfInput=document.getElementById('cpf');
+  const birthDateInput=document.getElementById('birth_date');
 
-  const logoResponsiveStyle=document.createElement('style');
-  logoResponsiveStyle.textContent='@media (min-width:650px){.brand img{width:104px!important;height:56px!important}}';
-  document.head.appendChild(logoResponsiveStyle);
+  const onlyDigits=value=>value.replace(/\D/g,'');
+
+  const maskCpf=value=>{
+    const digits=onlyDigits(value).slice(0,11);
+    if(digits.length<=3)return digits;
+    if(digits.length<=6)return `${digits.slice(0,3)}.${digits.slice(3)}`;
+    if(digits.length<=9)return `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6)}`;
+    return `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6,9)}-${digits.slice(9)}`;
+  };
+
+  const maskBirthDate=value=>{
+    const digits=onlyDigits(value).slice(0,8);
+    if(digits.length<=2)return digits;
+    if(digits.length<=4)return `${digits.slice(0,2)}/${digits.slice(2)}`;
+    return `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`;
+  };
+
+  cpfInput?.addEventListener('input',()=>{
+    cpfInput.value=maskCpf(cpfInput.value);
+  });
+
+  birthDateInput?.addEventListener('input',()=>{
+    birthDateInput.value=maskBirthDate(birthDateInput.value);
+  });
 
   const dateButtons=[...document.querySelectorAll('.date-card')];
   const slotButtons=[...document.querySelectorAll('.slot[data-slot-date]')];
@@ -39,7 +51,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   dateButtons.forEach(btn=>btn.addEventListener('click',()=>selectDate(btn)));
   const initiallySelected=document.querySelector('.date-card.selected')||dateButtons[0];
-  if(initiallySelected) selectDate(initiallySelected);
+  if(initiallySelected)selectDate(initiallySelected);
 
   const modal=document.getElementById('confirmModal');
   const choice=document.getElementById('modalChoice');
