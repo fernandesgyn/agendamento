@@ -1,22 +1,10 @@
-Options -Indexes
+DirectoryIndex index.php
 
-<IfModule mod_rewrite.c>
-RewriteEngine On
-
-# Bloqueia acesso HTTP direto aos arquivos internos/sensíveis do projeto.
-RewriteRule ^(?:app|database)(?:/|$) - [F,L,NC]
-RewriteRule ^(?:\.env(?:\..*)?|\.git(?:ignore)?|README\.md|seed\.bat)$ - [F,L,NC]
-
-# A aplicação pode ser enviada inteira para public_html/agendamento.
-# Estas regras mantêm /public fora da URL pública.
-RewriteRule ^$ public/index.php [L,QSA]
-RewriteRule ^logout\.php$ public/logout.php [L,QSA]
-RewriteRule ^assets/(.*)$ public/assets/$1 [L,QSA]
-RewriteRule ^admin/?$ public/admin/index.php [L,QSA]
-RewriteRule ^admin/(.*)$ public/admin/$1 [L,QSA]
-</IfModule>
+<FilesMatch "^(?:\.env(?:\..*)?|\.gitignore|README\.md|seed\.bat)$">
+  Require all denied
+</FilesMatch>
 
 <IfModule mod_headers.c>
-Header always set X-Content-Type-Options "nosniff"
-Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
