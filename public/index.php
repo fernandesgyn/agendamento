@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $loginError = 'Cadastro não encontrado. Confira o CPF e a data de nascimento informados.';
             } else {
                 loginBookingPerson($personId);
-                header('Location: /');
+                header('Location: ' . appPath());
                 exit;
             }
         }
@@ -42,21 +42,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $pdo->beginTransaction();
 
-                // Bloqueia a pessoa para impedir dois agendamentos simultâneos usando a mesma conta.
                 $stmt = $pdo->prepare('SELECT id FROM people WHERE id=? AND active=1 LIMIT 1 FOR UPDATE');
                 $stmt->execute([(int)$person['id']]);
                 if (!$stmt->fetchColumn()) {
                     throw new RuntimeException('Seu cadastro não está disponível para realizar o agendamento.');
                 }
 
-                // O agendamento é definitivo depois da primeira confirmação.
                 $stmt = $pdo->prepare("SELECT id FROM appointments WHERE person_id=? AND status='active' ORDER BY id DESC LIMIT 1 FOR UPDATE");
                 $stmt->execute([(int)$person['id']]);
                 if ($stmt->fetchColumn()) {
                     throw new RuntimeException('Seu agendamento já foi confirmado e não pode ser alterado ou excluído.');
                 }
 
-                // O FOR UPDATE serializa tentativas simultâneas para o mesmo horário.
                 $stmt = $pdo->prepare("SELECT s.id, s.capacity, s.active, d.active AS day_active, d.service_date, s.service_time
                                        FROM scheduling_slots s
                                        JOIN scheduling_days d ON d.id=s.scheduling_day_id
@@ -96,7 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Recarrega a pessoa depois das ações para refletir eventuais mudanças de sessão/cadastro.
 $person = currentBookingPerson($pdo);
 $current = null;
 $days = [];
@@ -147,6 +143,10 @@ if ($person) {
 }
 
 $firstDate = $days ? array_key_first($days) : null;
+$assetVersion = max(
+    (int)@filemtime(__DIR__ . '/assets/app.css'),
+    (int)@filemtime(__DIR__ . '/assets/app.js')
+);
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -155,12 +155,12 @@ $firstDate = $days ? array_key_first($days) : null;
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#00862F">
 <title><?= e(env('APP_NAME', 'Agendamento AGEHAB')) ?></title>
-<link rel="stylesheet" href="/assets/app.css">
-<script src="/assets/app.js" defer></script>
+<link rel="stylesheet" href="<?= e(appPath('assets/app.css')) ?>?v=<?= $assetVersion ?>">
+<script src="<?= e(appPath('assets/app.js')) ?>?v=<?= $assetVersion ?>" defer></script>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><img src="/assets/logo.svg" alt="AGEHAB"></div>
+  <div class="brand"><img src="<?= e(appPath('assets/logo.svg')) ?>" alt="AGEHAB"></div>
 </header>
 
 <main class="container">
@@ -194,7 +194,7 @@ $firstDate = $days ? array_key_first($days) : null;
 <?php else: ?>
   <div class="session-bar">
     <div><small>AGENDAMENTO PARA</small><strong><?= e($person['name']) ?></strong></div>
-    <form method="post" action="/logout.php"><input type="hidden" name="_token" value="<?= e(csrfToken()) ?>"><button type="submit" class="session-logout">Sair</button></form>
+    <form method="post" action="<?= e(appPath('logout.php')) ?>"><input type="hidden" name="_token" value="<?= e(csrfToken()) ?>"><button type="submit" class="session-logout">Sair</button></form>
   </div>
 
   <section class="hero">
