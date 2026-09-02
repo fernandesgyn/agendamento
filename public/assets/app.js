@@ -1,4 +1,20 @@
 document.addEventListener('DOMContentLoaded',()=>{
+  const brandLogo=document.querySelector('.brand img');
+  if(brandLogo){
+    brandLogo.src='/assets/logo.svg';
+    brandLogo.alt='AGEHAB';
+    brandLogo.style.width='88px';
+    brandLogo.style.height='48px';
+    brandLogo.style.objectFit='contain';
+    brandLogo.style.background='transparent';
+    brandLogo.style.borderRadius='0';
+    brandLogo.style.padding='0';
+  }
+
+  const logoResponsiveStyle=document.createElement('style');
+  logoResponsiveStyle.textContent='@media (min-width:650px){.brand img{width:104px!important;height:56px!important}}';
+  document.head.appendChild(logoResponsiveStyle);
+
   const dateButtons=[...document.querySelectorAll('.date-card')];
   const slotButtons=[...document.querySelectorAll('.slot[data-slot-date]')];
   const selectedDayLabel=document.getElementById('selectedDayLabel');
