@@ -10,5 +10,5 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 verifyCsrf();
 logoutBookingPerson();
-header('Location: /');
+header('Location: ' . appPath());
 exit;
