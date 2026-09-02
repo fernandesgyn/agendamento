@@ -43,7 +43,15 @@ function appPath(string $path = ''): string
         return $base === '' ? '/' : $base . '/';
     }
 
-    return $base . '/' . ltrim($path, '/');
+    $path = ltrim($path, '/');
+
+    // Na Hostinger o projeto inteiro fica em /agendamento e os arquivos públicos
+    // permanecem em /public. Assets são servidos diretamente dessa pasta, sem rewrite.
+    if (str_starts_with($path, 'assets/')) {
+        $path = 'public/' . $path;
+    }
+
+    return $base . '/' . $path;
 }
 
 date_default_timezone_set((string)env('APP_TIMEZONE', 'America/Sao_Paulo'));
