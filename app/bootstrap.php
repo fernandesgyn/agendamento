@@ -17,23 +17,53 @@ function loadEnv(string $path): void
 
 loadEnv(dirname(__DIR__) . '/.env');
 
-date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'America/Sao_Paulo');
-
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
-    session_set_cookie_params([
-        'httponly' => true,
-        'secure' => $secure,
-        'samesite' => 'Lax',
-        'path' => '/',
-    ]);
-    session_start();
-}
-
 function env(string $key, ?string $default = null): ?string
 {
     $value = getenv($key);
     return $value === false ? $default : $value;
+}
+
+function appBasePath(): string
+{
+    static $base = null;
+    if ($base !== null) return $base;
+
+    $value = trim((string)env('APP_BASE_PATH', ''));
+    if ($value === '' || $value === '/') return $base = '';
+
+    return $base = '/' . trim($value, '/');
+}
+
+function appPath(string $path = ''): string
+{
+    $base = appBasePath();
+    $path = trim($path);
+
+    if ($path === '' || $path === '/') {
+        return $base === '' ? '/' : $base . '/';
+    }
+
+    return $base . '/' . ltrim($path, '/');
+}
+
+date_default_timezone_set((string)env('APP_TIMEZONE', 'America/Sao_Paulo'));
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    $httpsByServer = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    $httpsByConfig = str_starts_with((string)env('APP_URL', ''), 'https://');
+
+    session_set_cookie_params([
+        'httponly' => true,
+        'secure' => $httpsByServer || $httpsByConfig,
+        'samesite' => 'Lax',
+        'path' => appBasePath() ?: '/',
+    ]);
+    session_start();
+}
+
+if (PHP_SAPI !== 'cli' && !headers_sent()) {
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
 }
 
 function db(): PDO
@@ -146,7 +176,7 @@ function adminLoggedIn(): bool
 function requireAdmin(): void
 {
     if (!adminLoggedIn()) {
-        header('Location: /admin/login.php');
+        header('Location: ' . appPath('admin/login.php'));
         exit;
     }
 }
