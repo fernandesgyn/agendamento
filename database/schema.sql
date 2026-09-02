@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS agendamento CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE agendamento;
+-- Importe este arquivo dentro do banco já criado no hPanel/Hostinger.
+-- O projeto não usa migrations e este arquivo representa a estrutura completa.
 
 CREATE TABLE people (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -12,7 +12,7 @@ CREATE TABLE people (
     UNIQUE KEY uq_people_cpf (cpf),
     INDEX idx_people_active (active),
     INDEX idx_people_name (name)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE scheduling_days (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -20,7 +20,7 @@ CREATE TABLE scheduling_days (
     active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE scheduling_slots (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -32,7 +32,7 @@ CREATE TABLE scheduling_slots (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_day_time (scheduling_day_id, service_time),
     CONSTRAINT fk_slots_day FOREIGN KEY (scheduling_day_id) REFERENCES scheduling_days(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE appointments (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -50,7 +50,7 @@ CREATE TABLE appointments (
     INDEX idx_person_status (person_id, status),
     CONSTRAINT fk_appointments_slot FOREIGN KEY (slot_id) REFERENCES scheduling_slots(id),
     CONSTRAINT fk_appointments_person FOREIGN KEY (person_id) REFERENCES people(id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO scheduling_days (service_date) VALUES ('2026-08-14'),('2026-08-15'),('2026-08-16');
 
