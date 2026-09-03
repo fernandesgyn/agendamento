@@ -5,7 +5,6 @@ require dirname(__DIR__) . '/app/bootstrap.php';
 
 $pdo = db();
 $loginError = '';
-$message = '';
 $error = '';
 $person = currentBookingPerson($pdo);
 
@@ -76,8 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare('INSERT INTO appointments (slot_id, person_id) VALUES (?, ?)');
                 $stmt->execute([$slotId, (int)$person['id']]);
                 $pdo->commit();
-
-                $message = 'Agendamento confirmado para ' . formatDateBr($slot['service_date']) . ' às ' . substr($slot['service_time'], 0, 5) . '.';
             } catch (Throwable $ex) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
 
@@ -165,18 +162,12 @@ $assetVersion = max(
 
 <main class="container">
 <?php if (!$person): ?>
-  <section class="hero login-hero">
-    <span class="eyebrow">ACESSO AO AGENDAMENTO</span>
-    <h1>Identifique-se para continuar</h1>
-    <p>Informe seu CPF e sua data de nascimento para acessar as datas e horários disponíveis.</p>
-  </section>
-
   <?php if ($loginError): ?><div class="alert error"><?= e($loginError) ?></div><?php endif; ?>
 
   <section class="public-login-card" aria-labelledby="login-title">
     <div class="login-symbol">✓</div>
     <h2 id="login-title">Acessar agendamento</h2>
-    <p>Use os mesmos dados do seu cadastro.</p>
+    <p>Informe seu CPF e sua data de nascimento para acessar as datas e horários disponíveis.</p>
     <form method="post" autocomplete="on">
       <input type="hidden" name="_token" value="<?= e(csrfToken()) ?>">
       <input type="hidden" name="action" value="login">
@@ -189,7 +180,6 @@ $assetVersion = max(
 
       <button class="primary login-submit" type="submit">ENTRAR</button>
     </form>
-    <small>Se seus dados não forem localizados, o sistema informará que não existe cadastro disponível para agendamento.</small>
   </section>
 <?php else: ?>
   <div class="session-bar">
@@ -197,32 +187,21 @@ $assetVersion = max(
     <form method="post" action="<?= e(appPath('logout.php')) ?>"><input type="hidden" name="_token" value="<?= e(csrfToken()) ?>"><button type="submit" class="session-logout">Sair</button></form>
   </div>
 
-  <section class="hero">
-    <span class="eyebrow">ATENDIMENTO PRESENCIAL</span>
-    <?php if ($current): ?>
-      <h1>Agendamento confirmado</h1>
-      <p>Confira abaixo a data e o horário do seu atendimento.</p>
-    <?php else: ?>
-      <h1>Escolha sua data e horário</h1>
-      <p>Escolha o dia e depois toque no horário desejado. Após a confirmação, o agendamento não poderá ser alterado.</p>
-    <?php endif; ?>
-  </section>
-
-  <?php if ($message): ?><div class="alert success"><?= e($message) ?></div><?php endif; ?>
   <?php if ($error): ?><div class="alert error"><?= e($error) ?></div><?php endif; ?>
 
   <?php if ($current): ?>
     <section class="current">
       <strong>AGENDAMENTO CONFIRMADO</strong>
       <span><?= e(formatDateBr($current['service_date'])) ?> às <?= e(substr($current['service_time'], 0, 5)) ?></span>
-      <small>Este agendamento é definitivo. Não é possível alterar a data, o horário ou excluir pelo acesso público.</small>
+      <p>O atendimento será realizado no dia e horário marcados de forma presencial na sede da Agência Goiana de Habitação localizada na Rua 18-A, nº 541, Setor Aeroporto, em Goiânia, Goiás, CEP: 74070-060.</p>
+      <a class="map-link" href="https://abre.go.gov.br/XYZW" target="_blank" rel="noopener noreferrer">Ver localização no mapa</a>
     </section>
 
     <section class="pending-card" aria-labelledby="pending-title">
       <div class="pending-icon">!</div>
       <div class="pending-content">
-        <strong id="pending-title">Conferir / Visualizar Pendências Documentais</strong>
-        <span>Consulte se existem pendências documentais relacionadas ao seu atendimento.</span>
+        <strong id="pending-title">Documentação Necessária</strong>
+        <span>Verifique aqui a lista de documentos necessários para o seu atendimento.</span>
         <a href="https://palladioweb.agehab.go.gov.br/noautentic/LoginVisualizacaoPendencias.aspx" target="_blank" rel="noopener noreferrer">Acesse Aqui</a>
       </div>
     </section>
