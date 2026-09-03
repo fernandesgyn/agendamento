@@ -30,10 +30,13 @@ button{touch-action:manipulation}
 .alert,.current,.empty{margin-top:18px;padding:19px;border-radius:17px;background:#fff;border:1px solid var(--line);font-size:1rem}
 .alert.success{border-left:6px solid var(--green)}
 .alert.error{border-left:6px solid var(--danger);color:#7a2727}
-.current{display:grid;gap:7px}
+.current{display:grid;gap:10px}
 .current strong{color:var(--green);font-size:.95rem}
 .current span{font-size:1.4rem;font-weight:900}
-.current small,.muted{color:var(--muted)}
+.current p{margin:2px 0 0;color:var(--muted);font-size:.92rem;line-height:1.5}
+.current .map-link{display:inline-flex;align-items:center;justify-content:center;min-height:52px;margin-top:4px;border-radius:13px;background:var(--green);color:#fff;text-decoration:none;font-size:.95rem;font-weight:900;padding:12px 18px}
+.current .map-link:focus-visible{outline:3px solid rgba(0,107,82,.25);outline-offset:2px}
+.muted{color:var(--muted)}
 
 .pending-card{margin-top:18px;padding:19px;border-radius:17px;background:#fff;border:1px solid var(--line);display:flex;align-items:flex-start;gap:14px;box-shadow:0 5px 18px rgba(28,61,52,.06)}
 .pending-icon{width:48px;height:48px;flex:0 0 48px;border-radius:50%;display:grid;place-items:center;background:#e9f6c8;color:var(--green);font-size:1.35rem;font-weight:950}
@@ -84,14 +87,12 @@ button{touch-action:manipulation}
 .secondary{background:#edf2f0;color:var(--ink);margin-top:10px}
 
 /* Login público */
-.login-hero{padding-top:30px;padding-bottom:30px}
-.public-login-card{margin-top:18px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:23px 18px 25px;box-shadow:0 8px 25px rgba(28,61,52,.08)}
+.public-login-card{margin-top:0;background:#fff;border:1px solid var(--line);border-radius:22px;padding:23px 18px 25px;box-shadow:0 8px 25px rgba(28,61,52,.08)}
 .public-login-card h2{font-size:1.55rem;margin:5px 0 4px;text-align:center}
 .public-login-card>p{margin:0 0 22px;color:var(--muted);text-align:center;font-size:.95rem}
 .public-login-card label{display:block;margin:17px 0 7px;font-size:1rem;font-weight:900;color:var(--ink)}
 .public-login-card input{width:100%;min-height:64px;border:2px solid #c8d9d4;border-radius:15px;padding:12px 14px;font-size:1.15rem;background:#fff;color:var(--ink)}
 .public-login-card input:focus{border-color:var(--green);outline:3px solid rgba(0,107,82,.12)}
-.public-login-card small{display:block;margin-top:18px;color:var(--muted);font-size:.78rem;line-height:1.4;text-align:center}
 .login-symbol{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;margin:0 auto 8px;background:#e9f6c8;color:var(--green);font-size:1.6rem;font-weight:950}
 .login-submit{min-height:66px;margin-top:24px;font-size:1.12rem;letter-spacing:.02em}
 .session-bar{margin-bottom:14px;background:#fff;border:2px solid #d5e7e1;border-radius:17px;padding:12px 13px 12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -110,7 +111,9 @@ button{touch-action:manipulation}
   .date-card{display:grid;text-align:center;justify-content:stretch;min-height:178px;padding:14px 10px}
   .date-vacancies{min-width:0;width:100%;min-height:67px}
   .slot-grid{grid-template-columns:repeat(4,1fr)}
-  .public-login-card{margin-top:22px;padding:30px 34px 34px}
+  .public-login-card{padding:30px 34px 34px}
+  .current{padding:22px}
+  .current .map-link{justify-self:start;min-width:190px}
   .pending-card{align-items:center;padding:22px}
   .pending-content{grid-template-columns:1fr auto;column-gap:20px;align-items:center}
   .pending-content strong,.pending-content span{grid-column:1}
